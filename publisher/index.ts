@@ -1,24 +1,41 @@
 import { createClient } from "redis";
+import { prisma } from "./prisma";
 
-async function main() {
+async function publisher() {
 	const client = await createClient()
 		.on("error", (err) => {
-			console.log("error: ", err);
+			console.log("redis client error: ", err);
 		})
 		.connect();
 
-	for (let i = 0; i < 5; i++) {
-		let url = Math.random().toString();
-		const res = await client.xAdd("betteruptime:website", "*", {
-			url,
-			id: i.toString(),
+	try {
+		const websites = await prisma.website.findMany({
+			distinct: ["url"],
+			select: {
+				url: true,
+			},
 		});
-		console.log(res);
+		// console.log(websites);
+
+		websites.forEach(async (w) => {
+			await client.xAdd("betteruptime:website", "*", {
+				url: w.url,
+			});
+		});
+
+		const len = await client.XLEN("betteruptime:website");
+		// console.log(len);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : "unknown error";
+		console.log(message);
 	}
-	const len = await client.xLen("betteruptime:website");
-	console.log(len);
 
 	client.destroy();
+}
+
+async function main() {
+	// const intervalId = setInterval(publisher, 3000);
+	publisher();
 }
 
 main();
